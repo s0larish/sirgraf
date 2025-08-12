@@ -1,0 +1,23 @@
+[project]
+name = "sirgraf"
+version = "0.1.0"
+description = "Simple Radial Gradient Filter for batch-processing coronagraph images."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Ritesh Patel"}]
+dependencies = [
+  "numpy>=1.23",
+  "astropy>=5.0",
+]
+
+[project.optional-dependencies]
+sunpy = ["sunpy>=5.0"]
+dev = ["pytest>=7.0", "sunpy>=5.0"]
+
+[project.scripts]
+sirgraf-filter = "main:cli"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

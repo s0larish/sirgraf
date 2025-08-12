@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+.env
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# data / outputs
+*.npy
+*.npz
+*.fits
+*.fit
+*.fts
+
+# IDEs
+.vscode/
+.idea/
