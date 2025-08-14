@@ -1,4 +1,3 @@
-# main.py
 from __future__ import annotations
 from typing import Iterable, List, Optional, Tuple, Union, Literal
 import argparse, glob, os, sys
@@ -6,77 +5,111 @@ import numpy as np
 
 from background import create_static_background, create_uniform_background
 
+try:
+    from astropy.io import fits
+    _HAS_ASTROPY = True
+except Exception:
+    _HAS_ASTROPY = False
+
 Array2D = np.ndarray
 Array3D = np.ndarray
 PathList = List[str]
 
-def _is_map(obj) -> bool:
-    return getattr(obj, "__class__", None).__module__.startswith("sunpy.map")
+def _fits_shape(path: str) -> Tuple[int, int]:
+    """
+    Read image shape from header without loading data.
+    Works for standard and compressed FITS.
+    """
+    hdr = fits.getheader(path, 0)
+    # NAXIS ordering is (x=W, y=H) for 2D primary HDU
+    W = int(hdr.get("NAXIS1"))
+    H = int(hdr.get("NAXIS2"))
+    if not (H and W):
+        raise ValueError(f"Could not read image shape from header: {path}")
+    return H, W
+
+# def _has_scaling_or_blank(path: str) -> bool:
+#     """Detects headers that force data scaling (no memmap)."""
+#     hdr = fits.getheader(path, 0)
+#     return any(k in hdr for k in ("BSCALE", "BZERO", "BLANK"))
+
+def _load_fits(path: str) -> np.ndarray:
+    """
+    Load FITS data safely:
+      - if scaling keywords present -> memmap=False so astropy can scale
+      - use uint=True to properly handle unsigned ints via BZERO
+      - squeeze and ensure 2D
+    """
+    # We choose memmap=False always to be safe across instruments;
+    # If you later want conditional memmap for speed, you can switch:
+    # use_memmap = not _has_scaling_or_blank(path)
+    # use_memmap = False
+    arr = fits.getdata(path, ext=0, memmap=False, uint=True)
+    arr = np.asarray(arr)
+    # Many solar FITS are (H, W) but some are 3D with singleton dimension.
+    if arr.ndim > 2:
+        arr = np.squeeze(arr)
+    if arr.ndim != 2:
+        raise ValueError(f"Expected 2D image in {path}, got shape {arr.shape}")
+    return arr
 
 def _normalize_input(
-    data_or_paths: Union[Array2D, Array3D, PathList, Iterable],
-) -> Tuple[Iterable[np.ndarray], int, int, int, bool]:
+    data_or_paths: Union[Array2D, Array3D, PathList, Iterable]
+) -> Tuple[Iterable[np.ndarray], int, int, int, np.dtype]:
     """
-    Returns (iter_frames, T, H, W, is_paths). Frames are float32 arrays.
-    Supports: 2D array, 3D cube, list[str] FITS paths, SunPy Map or list/iterable of Maps.
+    Normalize input types to a unified iterable of 2D frames.
+    Returns: (frames_iterable, T, H, W, dtype)
     """
-    if isinstance(data_or_paths, np.ndarray) and data_or_paths.ndim == 2:
-        H, W = data_or_paths.shape
-        def gen(): yield data_or_paths.astype(np.float32, copy=False)
-        return gen(), 1, H, W, False
+    # Case 1: already an ndarray
+    if isinstance(data_or_paths, np.ndarray):
+        arr = np.asarray(data_or_paths)
+        if arr.ndim == 2:
+            H, W = arr.shape
+            T = 1
+            frames = (arr,)
+            return frames, T, H, W, arr.dtype
+        elif arr.ndim == 3:
+            T, H, W = arr.shape[:3]
+            frames = (arr[i] for i in range(T))
+            return frames, T, H, W, arr.dtype
+        else:
+            raise ValueError(f"Expected 2D or 3D ndarray, got shape {arr.shape}")
 
-    if isinstance(data_or_paths, np.ndarray) and data_or_paths.ndim == 3:
-        T, H, W = data_or_paths.shape
+    # Case 2: iterable of arrays
+    if hasattr(data_or_paths, "__iter__") and not isinstance(data_or_paths, (str, bytes, list, tuple)):
+        # Peek first frame to infer shape
+        it = iter(data_or_paths)
+        first = next(it)
+        first = np.asarray(first)
+        if first.ndim != 2:
+            raise ValueError(f"Iterable must yield 2D arrays, got {first.shape}")
+        H, W = first.shape
         def gen():
-            for i in range(T):
-                yield np.asarray(data_or_paths[i], dtype=np.float32, copy=False)
-        return gen(), T, H, W, False
+            yield first
+            for f in it:
+                a = np.asarray(f)
+                if a.ndim != 2 or a.shape != (H, W):
+                    raise ValueError(f"All frames must be 2D and same shape {(H,W)}, got {a.shape}")
+                yield a
+        # We can’t know T without consuming; keep dtype from first
+        return gen(), -1, H, W, first.dtype  # T=-1 indicates unknown/stream
 
-    try:
-        import sunpy.map as smap  # noqa: F401
-        if _is_map(data_or_paths):
-            img = np.asarray(data_or_paths.data, dtype=np.float32)
-            H, W = img.shape
-            def gen(): yield img
-            return gen(), 1, H, W, False
-        if hasattr(data_or_paths, "__iter__") and not isinstance(data_or_paths, (str, bytes)):
-            first = None
-            frames = []
-            for m in data_or_paths:
-                if _is_map(m):
-                    a = np.asarray(m.data, dtype=np.float32)
-                    frames.append(a)
-                    if first is None:
-                        first = a.shape
-                    elif a.shape != first:
-                        raise ValueError("All SunPy maps must have same shape.")
-                else:
-                    frames = None
-                    break
-            if frames is not None:
-                T, (H, W) = len(frames), frames[0].shape
-                def gen():
-                    for a in frames: yield a
-                return gen(), T, H, W, False
-    except Exception:
-        pass
-
-    if isinstance(data_or_paths, (list, tuple)) and data_or_paths and isinstance(data_or_paths[0], str):
-        try:
-            from astropy.io import fits
-        except Exception as e:
-            raise ImportError("astropy is required for FITS path inputs.") from e
-        with fits.open(data_or_paths[0], memmap=True) as hdul:
-            H, W = np.asarray(hdul[0].data).shape
+    # Case 3: list/tuple of paths
+    if isinstance(data_or_paths, (list, tuple)) and data_or_paths and isinstance(data_or_paths[0], (str, bytes)):
+        if not _HAS_ASTROPY:
+            raise ImportError("astropy is required for FITS path inputs.")
+        H, W = _fits_shape(data_or_paths[0])
         T = len(data_or_paths)
         def gen():
-            from astropy.io import fits
             for p in data_or_paths:
-                with fits.open(p, memmap=True) as hdul:
-                    yield np.asarray(hdul[0].data, dtype=np.float32)
-        return gen(), T, H, W, True
+                a = _load_fits(p)
+                if a.shape != (H, W):
+                    raise ValueError(f"All frames must share shape {(H,W)}; {p} has {a.shape}")
+                yield a
+        # dtype only known after first load; assume float32 pipeline later
+        return gen(), T, H, W, np.float32
 
-    raise ValueError("Unsupported input type.")
+    raise TypeError("Unsupported input type for data_or_paths.")
 
 def _filter_frame(
     frame: np.ndarray, static_bg: np.ndarray, uniform_bg: np.ndarray, eps: float

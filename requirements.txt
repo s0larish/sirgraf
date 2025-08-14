@@ -1,4 +1,7 @@
-numpy
-pytest
-astropy
-sunpy
+numpy>=1.23
+matplotlib>=3.7
+astropy>=6.0
+sunpy>=5.1
+opencv-python>=4.9
+scikit-image>=0.23
+moviepy>=1.0.3

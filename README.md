@@ -12,6 +12,16 @@ then filter frames as:
 
 ## Install
 
+
+## Usage
+from sirgraf.core import process_directory 
+
+from sirgraf.visualize import plot_quicklook
+
+result = process_directory("/path/to/fits")
+
+plot_quicklook(result)
+
 ```bash
 # inside the repo root
 pip install .
@@ -19,3 +29,5 @@ pip install .
 pip install .[sunpy]
 # dev
 pip install .[dev]
+
+

@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from main import process_images
-from background import create_uniform_background
+from sirgraf.main import process_images
+from sirgraf.background import create_uniform_background
 
 
 # ---------- Fixtures ----------

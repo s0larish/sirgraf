@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from background import create_static_background, create_uniform_background
+from sirgraf.background import create_static_background, create_uniform_background
 
 
 # ---------- Fixtures ----------

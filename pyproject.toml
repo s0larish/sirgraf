@@ -1,23 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "sirgraf"
 version = "0.1.0"
-description = "Simple Radial Gradient Filter for batch-processing coronagraph images."
-readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "MIT"}
-authors = [{name = "Ritesh Patel"}]
+description = "Simple Radial Gradient Filter"
+authors = [{ name = "Your Name" }]
+requires-python = ">=3.10"
 dependencies = [
-  "numpy>=1.23",
-  "astropy>=5.0",
+  "numpy",
+  "matplotlib",
+  "astropy",
+  "sunpy>=5.1",
+  "opencv-python",
+  "scikit-image",
+  "moviepy",
 ]
 
-[project.optional-dependencies]
-sunpy = ["sunpy>=5.0"]
-dev = ["pytest>=7.0", "sunpy>=5.0"]
-
 [project.scripts]
-sirgraf-filter = "main:cli"
-
-[tool.pytest.ini_options]
-addopts = "-q"
-testpaths = ["tests"]
+sirgraf-plot = "sirgraf.cli:main_plot"
+sirgraf-animate = "sirgraf.cli:main_animate"
